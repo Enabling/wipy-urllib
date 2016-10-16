@@ -15,7 +15,11 @@ Supports:
  - GET, POST, PUT, DELETE, OPTIONS, HEAD
  - JSON payloads (experimental)
  
-Use it:
+##Use it
+Upload urequests.py on WiPy (FTP) in /flash/lib directory
+
+Python usage:
+
 ```
 import urequests
 
