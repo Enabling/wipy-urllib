@@ -1,7 +1,7 @@
 """Open an arbitrary URL.
-
+From 
 Adapted for Micropython by Alex Cowan <acowan@gmail.com>
-
+Minor fixes by Mabuse68 (Gabriele Bozzi) <gabriele.bozzi@gmail.com>
 Works in a similar way to python-requests http://docs.python-requests.org/en/latest/
 """
 
@@ -11,9 +11,10 @@ try:
 except:
     import ssl
 import binascii
+import json
 
 class URLOpener:
-    def __init__(self, url, method, params = {}, data = {}, headers = {}, cookies = {}, auth = (), timeout = 5):
+    def __init__(self, url, method, params = {}, data = {}, headers = {}, cookies = {}, auth = (), timeout = 10):
         self.status_code = 0
         self.headers = {}
         self.text = ""
@@ -24,33 +25,43 @@ class URLOpener:
         if scheme == 'http':
             addr = socket.getaddrinfo(host, int(port))[0][-1]
             s = socket.socket()
-            s.settimeout(5)
+            '''Add support for timeout as param'''
+            s.settimeout(timeout)
             s.connect(addr)
         else:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_SEC)
-            sock.settimeout(5)
+            sock.settimeout(timeout)
+            #sock.settimeout(10) # previous code doesn't take in account param
             s = ssl.wrap_socket(sock)
             s.connect(socket.getaddrinfo(host, port)[0][4])
         if params:
             enc_params = urlencode(params)
             path = path + '?' + enc_params.strip()
         header_string = 'Host: %s\r\n' % host
+        
         if headers:
             for k, v in headers.items():
                 header_string += '%s: %s\r\n' % (k, v)
         if cookies:
             for k, v in cookies.items():
                 header_string += 'Cookie: %s=%s\r\n' % (k, quote_plus(v))
-        request = b'%s %s HTTP/1.0\r\n%s' % (method, path, header_string)
+        
+        request = '%s %s HTTP/1.0\r\n%s' % (method, path, header_string)
         if data:
             if isinstance(data, dict):
-                enc_data = urlencode(data)
+            	'''Way faster to keep double-quotes in the string for a JSON payload'''
+            	if "JSON" in request or "json" in request: 
+            		enc_data = json.dumps(data)
+            	else:
+            		'''No JSON here'''
+                	enc_data = urlencode(json.dumps(data))
                 if not headers.get('Content-Type'):
                     request += 'Content-Type: application/x-www-form-urlencoded\r\n'
                 request += 'Content-Length: %s\r\n\r\n%s\r\n' % (len(enc_data), enc_data)
             else:
                 request += 'Content-Length: %s\r\n\r\n%s\r\n' % (len(data), data)
         request += '\r\n'
+
         s.send(request)
         while 1:
             recv = s.recv(1024)
@@ -63,6 +74,7 @@ class URLOpener:
         return self.text
 
     def _parse_result(self):
+    	'''This code needs review (missing support for void lines'''
         self.text = self.text.split('\r\n')
         while self.text:
             line = self.text.pop(0).strip()
@@ -82,6 +94,7 @@ class URLOpener:
 def urlparse(url):
     scheme = url.split('://')[0].lower()
     url = url.split('://')[1]
+    #host = url.split('/')[0] 
     host = url.split('/')[0]
     path = '/'
     data = ""
@@ -89,14 +102,15 @@ def urlparse(url):
     if scheme == 'https':
         port = 443
     if host != url:
-        path = '/'+''.join(url.split('/')[1:])
+    	'''Fixed bug in path generation'''
+        path = '/'.join(url.split('/')[1:])
         if path.count('?'):
             if path.count('?') > 1:
                 raise Exception('URL malformed, too many ?')
             [path, data] = path.split('?')
     if host.count(':'):
         [host, port] = host.split(':')
-    if path[0] != '/':
+    if path[0] != '/': #mod
         path = '/'+path
     return [scheme, host, port, path, data]
 
@@ -118,7 +132,7 @@ def head(url, **kwargs):
 def options(url, **kwargs):
     return urlopen(url, "OPTIONS", **kwargs)
 
-def urlopen(url, method="GET", params = {}, data = {}, headers = {}, cookies = {}, auth = (), timeout = 5, **kwargs):
+def urlopen(url, method="GET", params = {}, data = {}, headers = {}, cookies = {}, auth = (), timeout = 10, **kwargs):
     orig_url = url
     attempts = 0
     result = URLOpener(url, method, params, data, headers, cookies, auth, timeout)
